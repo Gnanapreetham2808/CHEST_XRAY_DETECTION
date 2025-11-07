@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chest X-ray Detection</title>
+  <style>
+    :root { --bg:#0f172a; --panel:#111827; --text:#e5e7eb; --muted:#9ca3af; --accent:#38bdf8; }
+    html, body { margin:0; padding:0; height:100%; background:var(--bg); color:var(--text); font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+    .container { max-width: 900px; margin: 0 auto; padding: 24px; }
+    .card { background: var(--panel); border-radius: 12px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    p.desc { margin: 0 0 24px; color: var(--muted); }
+    .uploader { border: 2px dashed #374151; border-radius: 12px; padding: 24px; text-align: center; }
+    .uploader.dragover { border-color: var(--accent); background: rgba(56,189,248,0.08); }
+    .btn { background: var(--accent); color: #002133; border: 0; padding: 10px 14px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+    .btn:disabled { opacity: .6; cursor: not-allowed; }
+    .row { display: flex; gap: 16px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+    .preview { width: 280px; max-height: 280px; object-fit: contain; background:#0b1220; border-radius: 8px; border:1px solid #1f2937; }
+    .results { flex: 1 1 420px; }
+    .bar { height: 12px; background: #1f2937; border-radius: 999px; overflow: hidden; }
+    .bar > span { display:block; height:100%; background: linear-gradient(90deg, #22d3ee, #22c55e); width: 0%; transition: width .5s ease; }
+    .kv { display:flex; justify-content: space-between; font-size:14px; margin: 8px 0 4px; }
+    .muted { color: var(--muted); font-size: 12px; }
+    footer { margin-top: 16px; color: var(--muted); font-size: 12px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>Chest X-ray Detection</h1>
+      <p class="desc">Upload an image to get predicted class probabilities from the model.</p>
+
+      <div class="uploader" id="dropzone">
+        <input id="fileInput" type="file" accept="image/*" style="display:none" />
+        <p>Drag & drop an image here, or</p>
+        <button class="btn" id="browseBtn">Browse</button>
+      </div>
+
+      <div class="row" style="margin-top:20px;">
+        <img id="preview" class="preview" alt="preview" />
+        <div class="results" id="results"></div>
+      </div>
+      <div class="row" style="margin-top:12px;">
+        <div style="display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;">
+          <div>
+            <div class="muted">Heatmap</div>
+            <img id="heatmap" class="preview" alt="heatmap" />
+          </div>
+          <div>
+            <div class="muted">Overlay</div>
+            <img id="overlay" class="preview" alt="overlay" />
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:16px; display:flex; gap:8px; align-items:center;">
+        <button class="btn" id="predictBtn" disabled>Run prediction</button>
+        <span class="muted" id="status"></span>
+      </div>
+    </div>
+
+    <footer>
+      Server endpoints: <code>GET /health</code>, <code>POST /predict</code>
+    </footer>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('fileInput');
+    const browseBtn = document.getElementById('browseBtn');
+    const dropzone = document.getElementById('dropzone');
+    const predictBtn = document.getElementById('predictBtn');
+    const previewImg = document.getElementById('preview');
+  const resultsDiv = document.getElementById('results');
+  const heatmapImg = document.getElementById('heatmap');
+  const overlayImg = document.getElementById('overlay');
+    const statusEl = document.getElementById('status');
+
+    let selectedFile = null;
+
+    const resetResults = () => { resultsDiv.innerHTML = ''; };
+
+    const setStatus = (msg) => { statusEl.textContent = msg || ''; };
+
+    const enablePredict = (enable) => { predictBtn.disabled = !enable; };
+
+    const onFileSelected = (file) => {
+      if (!file) return;
+      selectedFile = file;
+      const url = URL.createObjectURL(file);
+      previewImg.src = url;
+      enablePredict(true);
+      resetResults();
+      setStatus('Ready');
+    };
+
+    browseBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => onFileSelected(e.target.files[0]));
+
+    ;['dragenter','dragover'].forEach(evt => dropzone.addEventListener(evt, (e)=>{
+      e.preventDefault(); e.stopPropagation(); dropzone.classList.add('dragover');
+    }));
+    ;['dragleave','drop'].forEach(evt => dropzone.addEventListener(evt, (e)=>{
+      e.preventDefault(); e.stopPropagation(); dropzone.classList.remove('dragover');
+    }));
+    dropzone.addEventListener('drop', (e)=>{
+      const file = e.dataTransfer.files[0];
+      onFileSelected(file);
+    });
+
+    const renderResults = (json) => {
+      const { predicted, top, raw } = json || {};
+      if (!top || !Array.isArray(top)) {
+        resultsDiv.innerHTML = `<p class="muted">No predictions returned.</p>`;
+        return;
+      }
+      let html = '';
+      top.forEach(item => {
+        const pct = Math.round((item.score || 0) * 100);
+        html += `
+          <div class="kv">
+            <span>${item.label}</span>
+            <span>${pct}%</span>
+          </div>
+          <div class="bar"><span style="width:${pct}%"></span></div>
+        `;
+      });
+      if (predicted) {
+        html += `<p class="muted" style="margin-top:8px;">Predicted: <strong>${predicted.label}</strong> (${(predicted.score*100).toFixed(1)}%)</p>`;
+      }
+      resultsDiv.innerHTML = html;
+      if (json && json.images) {
+        if (json.images.heatmap) heatmapImg.src = json.images.heatmap;
+        if (json.images.overlay) overlayImg.src = json.images.overlay;
+      }
+    };
+
+    predictBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+      enablePredict(false);
+      setStatus('Predicting...');
+      try {
+        const form = new FormData();
+        form.append('file', selectedFile);
+  const resp = await fetch('/predict_visualize?top_k=3', { method: 'POST', body: form });
+        if (!resp.ok) {
+          const err = await resp.json().catch(()=>({detail: resp.statusText}));
+          throw new Error(err.detail || 'Request failed');
+        }
+        const json = await resp.json();
+        renderResults(json);
+        setStatus('Done');
+      } catch (e) {
+        resultsDiv.innerHTML = `<p style="color:#fca5a5">${e.message || e}</p>`;
+        setStatus('Error');
+      } finally {
+        enablePredict(true);
+      }
+    });
+  </script>
+</body>
+</html>
