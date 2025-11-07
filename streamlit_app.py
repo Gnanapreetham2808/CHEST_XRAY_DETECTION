@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 from typing import List
+from pathlib import Path
+import json
 
 import numpy as np
 import streamlit as st
@@ -81,6 +83,33 @@ def _make_overlay(base_rgb: np.ndarray, heatmap: np.ndarray, alpha: float):
     overlay_rgb = cv2.cvtColor(overlay_bgr, cv2.COLOR_BGR2RGB)
     return heat_255, overlay_rgb
 
+def _try_load_labels_file(expected_len: int | None = None) -> List[str] | None:
+    """Load labels from a local file (labels.txt), one label per line.
+    Optionally validate length if expected_len is provided.
+    """
+    for p in [Path("labels.txt"), Path(__file__).resolve().parent / "labels.txt"]:
+        if p.exists():
+            try:
+                lines = [ln.strip() for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip()]
+                if expected_len is None or len(lines) == expected_len:
+                    return lines
+            except Exception:
+                pass
+    return None
+
+@st.cache_data(show_spinner=False)
+def _load_class_descriptions() -> dict:
+    """Load class descriptions from class_descriptions.json, keyed by lowercase label."""
+    for p in [Path("class_descriptions.json"), Path(__file__).resolve().parent / "class_descriptions.json"]:
+        if p.exists():
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+                # normalize keys to lowercase
+                return {str(k).lower(): str(v) for k, v in data.items()}
+            except Exception:
+                pass
+    return {}
+
 if uploaded is not None:
     st.subheader("Prediction Results")
     model, input_size, num_classes = _load_model_cached()
@@ -88,23 +117,46 @@ if uploaded is not None:
     arr, x = _prepare_image(uploaded.getvalue(), input_size)
     probs = _predict(model, x)
 
+    # Determine labels with precedence: sidebar -> labels.txt -> env config -> smart defaults
+    use_labels: List[str]
     if labels and len(labels) == len(probs):
         use_labels = labels
-    elif config.CLASS_LABELS and len(config.CLASS_LABELS) == len(probs):
-        use_labels = config.CLASS_LABELS
     else:
-        use_labels = [f"class_{i}" for i in range(len(probs))]
+        file_labels = _try_load_labels_file(expected_len=len(probs))
+        if file_labels is not None:
+            use_labels = file_labels
+        elif config.CLASS_LABELS and len(config.CLASS_LABELS) == len(probs):
+            use_labels = config.CLASS_LABELS
+        elif len(probs) == 2:
+            # Common binary default
+            use_labels = ["NORMAL", "PNEUMONIA"]
+        else:
+            use_labels = [f"class_{i}" for i in range(len(probs))]
 
     k = min(top_k, len(probs))
     indices = np.argsort(probs)[::-1][:k]
     predicted_index = int(indices[0])
     predicted_label = use_labels[predicted_index]
+    predicted_score = float(probs[predicted_index])
 
     cols = st.columns([1,2])
     with cols[0]:
-        st.image(arr.astype(np.uint8), caption="Input", use_container_width=True)
+        st.image(arr.astype(np.uint8), caption="Input", use_column_width=True)
     with cols[1]:
-        st.markdown(f"**Predicted:** {predicted_label}  ")
+        # Prominent predicted disease name with score
+        display_label = predicted_label
+        display_pct = predicted_score * 100.0
+        # Simple coloring heuristic
+        if "normal" in predicted_label.lower():
+            st.success(f"Predicted: {display_label} ({display_pct:.1f}%)")
+        else:
+            st.warning(f"Predicted: {display_label} ({display_pct:.1f}%)")
+
+        # Show description if available
+        desc_map = _load_class_descriptions()
+        desc = desc_map.get(predicted_label.lower())
+        if desc:
+            st.info(desc)
         st.markdown("### Top Classes")
         for i in indices:
             pct = probs[i] * 100.0
@@ -117,15 +169,25 @@ if uploaded is not None:
         heat_255, overlay_rgb = _make_overlay(arr, heatmap, overlay_alpha)
         hcols = st.columns(2)
         with hcols[0]:
-            st.image(heat_255, caption="Heatmap", use_container_width=True)
+            st.image(heat_255, caption="Heatmap", use_column_width=True)
         with hcols[1]:
-            st.image(overlay_rgb, caption="Overlay", use_container_width=True)
+            st.image(overlay_rgb, caption="Overlay", use_column_width=True)
     except Exception as e:
         st.warning(f"Grad-CAM failed: {e}")
 
     st.markdown("### Raw Probabilities")
     prob_table = {"label": use_labels, "probability": [float(p) for p in probs]}
-    st.dataframe(prob_table)
+    st.dataframe(prob_table, use_container_width=True)
+
+    with st.expander("Class descriptions"):
+        desc_map = _load_class_descriptions()
+        if desc_map:
+            for lbl in use_labels:
+                d = desc_map.get(lbl.lower())
+                if d:
+                    st.markdown(f"**{lbl}** — {d}")
+                else:
+                    st.markdown(f"**{lbl}** — (no description)")
 
     st.caption(f"Model version: {os.path.basename(config.MODEL_PATH)} | Classes: {len(probs)}")
 else:

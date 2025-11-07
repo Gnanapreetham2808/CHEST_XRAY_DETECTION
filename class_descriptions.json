@@ -1,0 +1,8 @@
+{
+  "Normal": "Healthy chest X-rays showing clear lung fields, no signs of infection or disease.",
+  "Pneumonia-Bacterial": "Localized infection from bacteria; appears as dense, lobar consolidations.",
+  "Pneumonia-Viral": "Non-COVID viral infections (e.g., Influenza, RSV) usually exhibit diffuse, patchy interstitial infiltrates.",
+  "COVID-19": "Caused by SARS-CoV-2; often presents with bilateral ground-glass opacities, consolidations, and peripheral lung involvement.",
+  "Tuberculosis": "Chronic bacterial infection by Mycobacterium tuberculosis; often affects upper lobes with fibrotic scarring or cavitations.",
+  "Emphysema": "Chronic lung disease under COPD; visible through hyperinflation, flattened diaphragms, and reduced vascular markings."
+}

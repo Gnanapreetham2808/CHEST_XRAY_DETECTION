@@ -15,6 +15,8 @@ If the provided `.keras` file contains only weights, please share the model arch
 - Top‑k predictions with class names and scores
 - Grad‑CAM heatmap + overlay for visual explanation
 - Configurable image size, normalization, labels, and thresholds
+- Streamlit app for interactive exploration
+- Disease class descriptions (see below)
 
 ---
 
@@ -143,6 +145,17 @@ docker run --rm -p 8000:8000 xray-api
 ---
 
 ## Notes
+-## Disease Class Descriptions
+
+| Class | Description |
+|-------|-------------|
+| Normal | Healthy chest X-rays showing clear lung fields, no signs of infection or disease. |
+| Pneumonia-Bacterial | Localized infection from bacteria; appears as dense, lobar consolidations. |
+| Pneumonia-Viral | Non-COVID viral infections (e.g., Influenza, RSV) usually exhibit diffuse, patchy interstitial infiltrates. |
+| COVID-19 | Caused by SARS-CoV-2; often presents with bilateral ground-glass opacities, consolidations, and peripheral lung involvement. |
+| Tuberculosis | Chronic bacterial infection by Mycobacterium tuberculosis; often affects upper lobes with fibrotic scarring or cavitations. |
+| Emphysema | Chronic lung disease under COPD; visible through hyperinflation, flattened diaphragms, and reduced vascular markings. |
+
 
 - Performance: use CPU by default; enable GPU TensorFlow for acceleration if available.
 - Security: this demo doesn’t implement auth/rate limiting; don’t expose publicly without hardening.

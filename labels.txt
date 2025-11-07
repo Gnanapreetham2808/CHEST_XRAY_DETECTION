@@ -1,0 +1,6 @@
+Normal
+Pneumonia-Bacterial
+Pneumonia-Viral
+COVID-19
+Tuberculosis
+Emphysema
